@@ -119,6 +119,8 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, serverTimestamp, getDocs, Timestamp, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // This is your unique configuration object from your Firebase project.
+        // It is required for the live version on GitHub to connect to your database.
         const firebaseConfig = {
           apiKey: "AIzaSyAKYZ-RQz-ry6kE89dpn0DCHc-wOx1lexs",
           authDomain: "my-stashtrack-app.firebaseapp.com",
