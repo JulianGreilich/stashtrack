@@ -119,12 +119,17 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, serverTimestamp, getDocs, Timestamp, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- DO NOT EDIT ---
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        // --- END DO NOT EDIT ---
-
+        const firebaseConfig = {
+          apiKey: "AIzaSyAKYZ-RQz-ry6kE89dpn0DCHc-wOx1lexs",
+          authDomain: "my-stashtrack-app.firebaseapp.com",
+          projectId: "my-stashtrack-app",
+          storageBucket: "my-stashtrack-app.firebasestorage.app",
+          messagingSenderId: "123421812523",
+          appId: "1:123421812523:web:3760831a567bf658c0476e"
+        };
+        const appId = firebaseConfig.projectId; // This line is important!
+        const initialAuthToken = null;
+        
         let db, auth, userId, inventoryCollection;
         
         const ui = {
