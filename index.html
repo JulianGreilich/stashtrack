@@ -174,7 +174,23 @@
                 setupEventListeners();
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
-                ui.loadingDiv.textContent = "Error loading app. Please check console.";
+                if (error.code === 'auth/requests-from-referer-are-blocked') {
+                    ui.loadingDiv.innerHTML = `
+                        <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md text-left">
+                            <p class="font-bold">Authentication Error!</p>
+                            <p class="text-sm mt-2">Firebase is blocking requests from this website's address. This is a security feature.</p>
+                            <p class="text-xs mt-3 text-slate-600"><b>To fix this:</b></p>
+                            <ol class="list-decimal list-inside text-xs text-slate-600 mt-1">
+                                <li>Go to the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="text-blue-600 underline">Google Cloud Console API Credentials</a> page.</li>
+                                <li>Find your API key, click the pencil icon to edit it.</li>
+                                <li>Under "Application restrictions", select "Websites" and add your GitHub Pages URL (e.g., <code>https://your-username.github.io/stashtrack/*</code>) to the list of allowed referrers.</li>
+                                <li>To use this preview, you may need to temporarily select "Don't restrict key".</li>
+                            </ol>
+                        </div>
+                    `;
+                } else {
+                    ui.loadingDiv.textContent = "Error loading app. Please check console.";
+                }
             }
         }
 
@@ -471,35 +487,42 @@
         
         function handleQuantityOverwrite(displayElement, itemId) {
             const valueElement = displayElement.querySelector('.item-quantity-value');
-            const originalValue = valueElement.textContent;
+            const originalValue = valueElement.textContent.replace(/,/g, '');
             
             const input = document.createElement('input');
             input.type = 'number';
             input.step = "0.1";
             input.className = 'no-spinner text-2xl font-bold text-slate-800 bg-transparent w-full text-center outline-none';
-            input.value = originalValue.replace(/,/g, '');
+            input.value = originalValue;
             
             displayElement.replaceChild(input, valueElement);
             input.focus();
             input.select();
             
-            const saveAndExit = () => {
-                const newValue = input.value.replace(/,/g, '');
-                if (newValue !== originalValue.replace(/,/g, '')) {
+            const saveOrRevert = () => {
+                const newValue = input.value;
+                input.removeEventListener('blur', saveOrRevert);
+                input.removeEventListener('keydown', handleKeydown);
+
+                if (newValue !== originalValue) {
                     setQuantity(itemId, newValue);
+                } else {
+                    displayElement.replaceChild(valueElement, input);
                 }
-                 // Always revert back to display, even if no change
-                 displayElement.replaceChild(valueElement, input);
+            };
+
+            const handleKeydown = (e) => {
+                if (e.key === 'Enter') {
+                    saveOrRevert();
+                } else if (e.key === 'Escape') {
+                    input.removeEventListener('blur', saveOrRevert);
+                    input.removeEventListener('keydown', handleKeydown);
+                    displayElement.replaceChild(valueElement, input);
+                }
             };
             
-            input.addEventListener('blur', saveAndExit);
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') input.blur();
-                if (e.key === 'Escape') { 
-                    input.value = originalValue; 
-                    input.blur(); 
-                }
-            });
+            input.addEventListener('blur', saveOrRevert);
+            input.addEventListener('keydown', handleKeydown);
         }
 
         async function showHistoryModal(itemId, itemName, currentQuantity) {
@@ -511,7 +534,7 @@
             }
             
             const canvasContainer = ui.historyModal.body;
-            canvasContainer.innerHTML = ''; // Clear previous content
+            canvasContainer.innerHTML = '';
 
             const historyCol = collection(db, inventoryCollection.path, itemId, 'history');
             const q = query(historyCol, orderBy('timestamp', 'desc'));
