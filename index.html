@@ -269,7 +269,6 @@
         }
 
         async function calculateStats(itemId, normalDuration) {
-            // ... (rest of the function is unchanged)
             if (normalDuration) { return { runRate: parseFloat(normalDuration) }; }
             const historyCollection = collection(db, inventoryCollection.path, itemId, 'history');
             const q = query(historyCollection, orderBy('timestamp', 'asc'));
@@ -355,24 +354,30 @@
         }
 
         function renderSummaryChart() {
-            // ... (rest of the function is unchanged, but uses allItems)
-            const chartData = allItems.filter(item => item.runRate && item.quantity > 0).map(item => ({ name: item.name, remainingDays: item.quantity * item.runRate })).sort((a, b) => a.remainingDays - b.remainingDays); 
+            const itemsToChart = (currentCategoryFilter === 'all')
+                ? allItems
+                : allItems.filter(item => item.category === currentCategoryFilter);
+
+            const chartData = itemsToChart.filter(item => item.runRate && item.quantity > 0).map(item => ({ name: item.name, remainingDays: item.quantity * item.runRate })).sort((a, b) => a.remainingDays - b.remainingDays); 
+            
             if (summaryChart) { summaryChart.destroy(); }
             if (chartData.length === 0) { ui.summaryChartContainer.classList.add('hidden'); return; }
+            
             ui.summaryChartContainer.classList.remove('hidden');
             const labels = chartData.map(d => d.name);
             const data = chartData.map(d => d.remainingDays);
             const colors = data.map(days => { if (days <= 14) return 'rgba(239, 68, 68, 0.8)'; if (days <= 28) return 'rgba(245, 158, 11, 0.8)'; return 'rgba(34, 197, 94, 0.8)'; });
+            
             summaryChart = new Chart(ui.summaryChartCanvas, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Days Remaining', data: data, backgroundColor: colors, borderColor: colors.map(c => c.replace('0.8', '1')), borderWidth: 1 }] }, options: { indexAxis: 'y', maintainAspectRatio: false, responsive: true, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(context) { return `Est. ${context.raw.toFixed(1)} days remaining`; } } } }, scales: { x: { beginAtZero: true, title: { display: true, text: 'Estimated Days Remaining' } } } } });
         }
 
         function renderInventory(items) {
-            // ... (function logic is mostly unchanged, just mobile optimization part)
             ui.loadingDiv.classList.add('hidden');
             ui.inventoryList.innerHTML = ''; 
             const twoWeeksFromNow = new Date();
             twoWeeksFromNow.setDate(new Date().getDate() + 14);
             let lowStockCount = 0;
+
             if (items.length === 0) {
                 ui.emptyStateDiv.classList.remove('hidden');
                 ui.emptyStateDiv.querySelector('h3').textContent = (currentCategoryFilter === 'all') ? 'No items in inventory' : `No items in category: ${currentCategoryFilter}`;
@@ -382,7 +387,7 @@
                     const el = document.createElement('div');
                     let depletionDate = null; let depletionText = 'N/A'; let isRunningLow = false;
                     if (item.runRate && item.quantity > 0) { depletionDate = new Date(); depletionDate.setDate(depletionDate.getDate() + (item.quantity * item.runRate)); depletionText = depletionDate.toLocaleDateString(); if (depletionDate <= twoWeeksFromNow) { isRunningLow = true; lowStockCount++; } } else if (item.runRate && item.quantity <= 0) { depletionText = 'Empty'; }
-                    el.className = `p-4 rounded-lg shadow-sm fade-in transition-colors ${isRunningLow ? 'bg-amber-50 border-2 border-amber-300' : 'bg-white'}`;
+                    el.className = `p-3 rounded-lg shadow-sm fade-in transition-colors ${isRunningLow ? 'bg-amber-50 border-2 border-amber-300' : 'bg-white'}`;
                     el.dataset.id = item.id;
                     el.innerHTML = `
                         <div class="flex items-start justify-between">
@@ -391,26 +396,26 @@
                                 <p class="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full inline-block mt-1">${item.category || 'Uncategorized'}</p>
                             </div>
                             <div class="flex items-center gap-1">
-                                <button data-action="edit" class="text-slate-500 hover:text-blue-600 p-1 rounded-full flex items-center justify-center transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg></button>
-                                <button data-action="delete" class="text-slate-500 hover:text-red-600 p-1 rounded-full flex items-center justify-center transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg></button>
+                                <button data-action="edit" class="text-slate-500 hover:text-blue-600 p-1 rounded-full"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 pointer-events-none" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg></button>
+                                <button data-action="delete" class="text-slate-500 hover:text-red-600 p-1 rounded-full"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 pointer-events-none" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg></button>
                             </div>
                         </div>
-                        <div class="grid grid-cols-2 gap-4 mt-3">
-                            <div class="item-quantity-display bg-slate-50 p-2 rounded-md text-center cursor-pointer hover:bg-slate-100 flex flex-col justify-center">
-                                <p class="text-xs text-slate-500">Current Count</p>
-                                <p class="text-2xl font-bold text-slate-800 item-quantity-value">${Number(item.quantity).toLocaleString()}</p>
+                        <div class="flex items-center justify-between mt-2">
+                            <div class="item-quantity-display bg-slate-50 p-2 rounded-md text-center cursor-pointer hover:bg-slate-100">
+                                <p class="text-xs text-slate-500">Count</p>
+                                <p class="text-xl font-bold text-slate-800 item-quantity-value">${Number(item.quantity).toLocaleString()}</p>
                             </div>
-                            <div class="grid grid-cols-2 gap-2 text-sm">
-                                <button data-action="increase-1" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 rounded-md flex-grow">+1</button>
-                                <button data-action="increase-0.1" class="bg-blue-200 hover:bg-blue-300 text-blue-800 font-bold py-2 rounded-md flex-grow">+0.1</button>
-                                <button data-action="decrease-1" class="bg-slate-300 hover:bg-slate-400 text-slate-800 font-bold py-2 rounded-md flex-grow">-1</button>
-                                <button data-action="decrease-0.1" class="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 rounded-md flex-grow">-0.1</button>
+                            <div class="grid grid-cols-4 gap-2 text-sm flex-1 ml-4">
+                                <button data-action="decrease-1" class="bg-slate-300 hover:bg-slate-400 text-slate-800 font-bold py-2 rounded-md">-1</button>
+                                <button data-action="decrease-0.1" class="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 rounded-md">-0.1</button>
+                                <button data-action="increase-1" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 rounded-md">+1</button>
+                                <button data-action="increase-10" class="bg-blue-200 hover:bg-blue-300 text-blue-800 font-bold py-2 rounded-md">+10</button>
                             </div>
                         </div>
-                        <div class="mt-4 pt-3 border-t border-slate-100 grid grid-cols-3 gap-2 text-center text-xs">
-                             <div><p class="text-slate-500">Est. Run Rate</p><p class="font-medium">${item.runRate ? `${item.runRate.toFixed(1)} days/unit` : 'N/A'}</p></div>
-                            <div><p class="text-slate-500">Est. Empty On</p><p class="font-medium">${depletionText}</p></div>
-                            <div><button data-action="history" data-name="${item.name}" data-quantity="${item.quantity}" class="text-blue-600 hover:underline w-full h-full">View History</button></div>
+                        <div class="mt-3 pt-2 border-t border-slate-100 grid grid-cols-3 gap-2 text-center text-xs">
+                             <div><p class="text-slate-500">Run Rate</p><p class="font-medium">${item.runRate ? `${item.runRate.toFixed(1)}d/unit` : 'N/A'}</p></div>
+                            <div><p class="text-slate-500">Empty On</p><p class="font-medium">${depletionText}</p></div>
+                            <div><button data-action="history" data-name="${item.name}" data-quantity="${item.quantity}" class="text-blue-600 hover:underline w-full h-full">History</button></div>
                         </div>
                     `;
                     ui.inventoryList.appendChild(el);
@@ -478,9 +483,10 @@
                 const action = button.dataset.action;
                 
                 const actions = {
+                    'increase-10': () => updateQuantity(itemId, 10),
                     'increase-1': () => updateQuantity(itemId, 1),
-                    'decrease-1': () => updateQuantity(itemId, -1),
                     'increase-0.1': () => updateQuantity(itemId, 0.1),
+                    'decrease-1': () => updateQuantity(itemId, -1),
                     'decrease-0.1': () => updateQuantity(itemId, -0.1),
                     'delete': () => { if(confirm('Are you sure you want to delete this item?')) deleteDoc(doc(db, inventoryCollection.path, itemId)) },
                     'edit': () => showEditModal(itemId),
@@ -504,6 +510,7 @@
                     document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
                     button.classList.add('active');
                     renderFilteredInventory();
+                    renderSummaryChart(); // Re-render chart on filter change
                 }
             });
         }
@@ -523,6 +530,13 @@
                     <label for="editItemCategory" class="block text-sm font-medium text-slate-600">Category</label>
                     <select id="editItemCategory" name="itemCategory" class="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md"></select>
                 </div>
+                <div id="edit-new-category-container" class="hidden">
+                    <label for="editNewCategoryName" class="block text-sm font-medium text-slate-600">New Category Name</label>
+                    <div class="flex items-center gap-2 mt-1">
+                        <input type="text" id="editNewCategoryName" name="editNewCategoryName" class="block w-full px-3 py-2 bg-white border border-slate-300 rounded-md">
+                        <button type="button" id="cancelEditNewCategory" class="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
+                    </div>
+                </div>
                  <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label for="editItemQuantity" class="block text-sm font-medium text-slate-600">Quantity</label>
@@ -539,15 +553,47 @@
                 </div>
             `;
             
-            renderCategoryDropdown(form.querySelector('#editItemCategory'), { selected: item.category });
+            const editCategorySelect = form.querySelector('#editItemCategory');
+            const editNewCategoryContainer = form.querySelector('#edit-new-category-container');
+            const editNewCategoryInput = form.querySelector('#editNewCategoryName');
+            const cancelEditNewCategoryBtn = form.querySelector('#cancelEditNewCategory');
+
+            renderCategoryDropdown(editCategorySelect, { selected: item.category });
+
+            editCategorySelect.addEventListener('change', () => {
+                if (editCategorySelect.value === 'new_category') {
+                    editCategorySelect.classList.add('hidden');
+                    editNewCategoryContainer.classList.remove('hidden');
+                    editNewCategoryInput.focus();
+                }
+            });
+            cancelEditNewCategoryBtn.addEventListener('click', () => {
+                editNewCategoryContainer.classList.add('hidden');
+                editCategorySelect.classList.remove('hidden');
+                editNewCategoryInput.value = '';
+                editCategorySelect.value = item.category || '';
+            });
+
             ui.editItemModal.el.classList.remove('hidden');
 
             form.onsubmit = async (e) => {
                 e.preventDefault();
+                let category = editCategorySelect.value;
+                const newCategoryName = editNewCategoryInput.value.trim();
+                
+                if (editCategorySelect.value === 'new_category') {
+                    if (newCategoryName) {
+                        await addDoc(categoriesCollection, { name: newCategoryName });
+                        category = newCategoryName;
+                    } else {
+                        category = item.category;
+                    }
+                }
+                
                 const formData = new FormData(form);
                 const updates = {
                     name: formData.get('itemName').trim(),
-                    category: formData.get('itemCategory'),
+                    category: category,
                     quantity: parseFloat(formData.get('itemQuantity')),
                     duration: formData.get('itemDuration') || null
                 };
@@ -560,7 +606,6 @@
         }
 
         async function showHistoryModal(itemId, itemName, currentQuantity) {
-            // ... (rest of the function is unchanged)
             ui.historyModal.title.textContent = `History for ${itemName}`;
             if (historyChart) { historyChart.destroy(); historyChart = null; }
             const canvasContainer = ui.historyModal.body;
@@ -576,7 +621,7 @@
                 snapshot.docs.forEach(doc => { const log = doc.data(); if (log.timestamp) { const date = log.timestamp.toDate(); const prevQuantity = runningQuantity - log.change; labels.unshift(date.toLocaleDateString()); data.unshift(prevQuantity); runningQuantity = prevQuantity; } });
                 historyChart = new Chart(canvas, { type: 'line', data: { labels: labels, datasets: [{ label: 'Stock Level', data: data, fill: true, borderColor: 'rgb(59, 130, 246)', backgroundColor: 'rgba(59, 130, 246, 0.1)', tension: 0.1, stepped: true, }] }, options: { responsive: true, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } } });
             }
-            ui.historyModal.el.classList.remove('hidden');
+            ui.editItemModal.el.classList.remove('hidden');
         }
         
         main();
