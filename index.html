@@ -38,6 +38,10 @@
             z-index: 50;
             transition: opacity 0.3s ease;
         }
+        .category-filter-btn.active {
+            background-color: #3b82f6;
+            color: white;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
@@ -62,6 +66,14 @@
             <p class="font-bold">Heads up!</p>
             <p id="alertBannerText"></p>
         </div>
+        
+        <!-- Category Filters -->
+        <div id="category-filters-container" class="mb-4">
+            <h3 class="text-sm font-medium text-slate-600 mb-2">Filter by Category:</h3>
+            <div id="category-filters" class="flex flex-wrap gap-2">
+                <!-- Filter buttons will be inserted here -->
+            </div>
+        </div>
 
         <div id="loading" class="text-center my-8"><p class="text-slate-500">Loading inventory...</p></div>
         <div id="inventoryList" class="space-y-4"></div>
@@ -78,6 +90,19 @@
                 <div>
                     <label for="itemName" class="block text-sm font-medium text-slate-600">Item Name</label>
                     <input type="text" id="itemName" name="itemName" required class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-sm placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., Coffee Beans, AA Batteries">
+                </div>
+                <div id="category-selection-container">
+                    <label for="itemCategory" class="block text-sm font-medium text-slate-600">Category</label>
+                    <select id="itemCategory" name="itemCategory" required class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                        <!-- Options will be populated by JS -->
+                    </select>
+                </div>
+                 <div id="new-category-container" class="hidden">
+                    <label for="newCategoryName" class="block text-sm font-medium text-slate-600">New Category Name</label>
+                    <div class="flex items-center gap-2 mt-1">
+                        <input type="text" id="newCategoryName" name="newCategoryName" class="block w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-sm placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                        <button type="button" id="cancelNewCategory" class="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
+                    </div>
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                     <div>
@@ -101,26 +126,35 @@
         </footer>
     </div>
 
-    <!-- History Modal -->
+    <!-- Modals -->
     <div id="historyModal" class="modal-overlay hidden">
         <div class="bg-white rounded-lg shadow-xl w-11/12 max-w-md m-4">
             <div class="p-4 border-b flex justify-between items-center">
                 <h3 class="text-lg font-semibold" id="historyModalTitle">Usage History</h3>
-                <button id="closeModal" class="text-slate-500 hover:text-slate-800 text-2xl leading-none">&times;</button>
+                <button data-action="close-modal" class="text-slate-500 hover:text-slate-800 text-2xl leading-none">&times;</button>
             </div>
-            <div id="historyModalBody" class="p-4">
-                <!-- Canvas is now dynamically added here -->
+            <div id="historyModalBody" class="p-4"></div>
+        </div>
+    </div>
+
+    <div id="editItemModal" class="modal-overlay hidden">
+        <div class="bg-white rounded-lg shadow-xl w-11/12 max-w-md m-4">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 class="text-lg font-semibold">Edit Item</h3>
+                <button data-action="close-modal" class="text-slate-500 hover:text-slate-800 text-2xl leading-none">&times;</button>
+            </div>
+            <div class="p-4">
+                <form id="editItemForm" class="space-y-4"></form>
             </div>
         </div>
     </div>
+
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, serverTimestamp, getDocs, Timestamp, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // This is your unique configuration object from your Firebase project.
-        // It is required for the live version on GitHub to connect to your database.
         const firebaseConfig = {
           apiKey: "AIzaSyAKYZ-RQz-ry6kE89dpn0DCHc-wOx1lexs",
           authDomain: "my-stashtrack-app.firebaseapp.com",
@@ -132,7 +166,10 @@
         const appId = firebaseConfig.projectId;
         const initialAuthToken = null;
 
-        let db, auth, userId, inventoryCollection;
+        let db, auth, userId, inventoryCollection, categoriesCollection;
+        let allItems = [];
+        let categories = [];
+        let currentCategoryFilter = 'all';
         
         const ui = {
             addItemForm: document.getElementById('addItemForm'),
@@ -144,11 +181,19 @@
             alertBannerText: document.getElementById('alertBannerText'),
             summaryChartContainer: document.getElementById('summaryChartContainer'),
             summaryChartCanvas: document.getElementById('summaryChart'),
+            categoryFilters: document.getElementById('category-filters'),
+            itemCategorySelect: document.getElementById('itemCategory'),
+            newCategoryContainer: document.getElementById('new-category-container'),
+            newCategoryNameInput: document.getElementById('newCategoryName'),
+            cancelNewCategoryBtn: document.getElementById('cancelNewCategory'),
             historyModal: {
                 el: document.getElementById('historyModal'),
                 title: document.getElementById('historyModalTitle'),
                 body: document.getElementById('historyModalBody'),
-                closeBtn: document.getElementById('closeModal'),
+            },
+            editItemModal: {
+                el: document.getElementById('editItemModal'),
+                form: document.getElementById('editItemForm'),
             }
         };
         let historyChart = null;
@@ -167,46 +212,34 @@
                 userId = auth.currentUser.uid;
                 ui.userIdDisplay.textContent = userId;
 
-                const collectionPath = `artifacts/${appId}/users/${userId}/inventory`;
-                inventoryCollection = collection(db, collectionPath);
+                const basePath = `artifacts/${appId}/users/${userId}`;
+                inventoryCollection = collection(db, `${basePath}/inventory`);
+                categoriesCollection = collection(db, `${basePath}/categories`);
                 
-                listenForInventoryChanges();
+                listenForChanges();
                 setupEventListeners();
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
-                if (error.code === 'auth/requests-from-referer-are-blocked') {
-                    ui.loadingDiv.innerHTML = `
-                        <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md text-left">
-                            <p class="font-bold">Authentication Error!</p>
-                            <p class="text-sm mt-2">Firebase is blocking requests from this website's address. This is a security feature.</p>
-                            <p class="text-xs mt-3 text-slate-600"><b>To fix this:</b></p>
-                            <ol class="list-decimal list-inside text-xs text-slate-600 mt-1">
-                                <li>Go to the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="text-blue-600 underline">Google Cloud Console API Credentials</a> page.</li>
-                                <li>Find your API key, click the pencil icon to edit it.</li>
-                                <li>Under "Application restrictions", select "Websites" and add your GitHub Pages URL (e.g., <code>https://your-username.github.io/stashtrack/*</code>) to the list of allowed referrers.</li>
-                                <li>To use this preview, you may need to temporarily select "Don't restrict key".</li>
-                            </ol>
-                        </div>
-                    `;
-                } else {
-                    ui.loadingDiv.textContent = "Error loading app. Please check console.";
-                }
+                ui.loadingDiv.textContent = "Error loading app. Please check console.";
             }
         }
 
-        function listenForInventoryChanges() {
-            const q = query(inventoryCollection);
-            onSnapshot(q, async (snapshot) => {
+        function listenForChanges() {
+            onSnapshot(query(categoriesCollection, orderBy('name')), (snapshot) => {
+                categories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderCategoryFilters();
+                renderCategoryDropdown(ui.itemCategorySelect, { required: true });
+            });
+
+            onSnapshot(query(inventoryCollection), async (snapshot) => {
                 const itemPromises = snapshot.docs.map(async (doc) => {
                     const item = { id: doc.id, ...doc.data() };
                     const stats = await calculateStats(item.id, item.duration);
                     return { ...item, ...stats };
                 });
-
-                const itemsWithStats = await Promise.all(itemPromises);
-                itemsWithStats.sort((a, b) => a.name.localeCompare(b.name));
-                renderInventory(itemsWithStats);
-                renderSummaryChart(itemsWithStats);
+                allItems = await Promise.all(itemPromises);
+                renderFilteredInventory();
+                renderSummaryChart();
             }, (error) => {
                 console.error("Error fetching inventory:", error);
                 ui.loadingDiv.textContent = "Failed to load inventory.";
@@ -223,56 +256,26 @@
              });
         }
 
-
         async function updateQuantity(itemId, change) {
+            const item = allItems.find(i => i.id === itemId);
+            if (!item) return;
             const itemRef = doc(db, inventoryCollection.path, itemId);
-            const currentItem = ui.inventoryList.querySelector(`[data-id="${itemId}"]`);
-            if (!currentItem) return;
-            const currentQuantityStr = currentItem.querySelector('.item-quantity-value').textContent.replace(/,/g, '');
-            const currentQuantity = parseFloat(currentQuantityStr);
-            const newQuantity = Math.max(0, currentQuantity + change);
+            const newQuantity = Math.max(0, item.quantity + change);
             
             try {
                 await updateDoc(itemRef, { quantity: newQuantity });
-                await logChange(itemId, newQuantity - currentQuantity, currentQuantity);
+                await logChange(itemId, newQuantity - item.quantity, item.quantity);
             } catch (error) { console.error("Error updating quantity:", error); }
         }
 
-        async function setQuantity(itemId, newQuantityStr) {
-            const newQuantity = Math.max(0, parseFloat(newQuantityStr));
-            if (isNaN(newQuantity)) return;
-            
-            const itemRef = doc(db, inventoryCollection.path, itemId);
-            const currentItem = ui.inventoryList.querySelector(`[data-id="${itemId}"]`);
-            if (!currentItem) return;
-            const currentQuantityStr = currentItem.querySelector('.item-quantity-value').textContent.replace(/,/g, '');
-            const currentQuantity = parseFloat(currentQuantityStr);
-            
-            try {
-                await updateDoc(itemRef, { quantity: newQuantity });
-                await logChange(itemId, newQuantity - currentQuantity, currentQuantity);
-            } catch (error) { console.error("Error setting quantity:", error); }
-        }
-
         async function calculateStats(itemId, normalDuration) {
-            if (normalDuration) {
-                return { runRate: parseFloat(normalDuration) };
-            }
-
+            // ... (rest of the function is unchanged)
+            if (normalDuration) { return { runRate: parseFloat(normalDuration) }; }
             const historyCollection = collection(db, inventoryCollection.path, itemId, 'history');
             const q = query(historyCollection, orderBy('timestamp', 'asc'));
             const snapshot = await getDocs(q);
-
-            const consumptions = snapshot.docs
-                .map(doc => ({ ...doc.data(), id: doc.id }))
-                .filter(log => log.change < 0 && log.timestamp)
-                .map(log => ({
-                    units: Math.abs(log.change),
-                    date: log.timestamp.toDate()
-                }));
-
+            const consumptions = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter(log => log.change < 0 && log.timestamp).map(log => ({ units: Math.abs(log.change), date: log.timestamp.toDate() }));
             if (consumptions.length < 1) { return { runRate: null }; }
-
             if (consumptions.length === 1) {
                 const firstEvent = snapshot.docs[0]?.data();
                 if (!firstEvent || !firstEvent.timestamp) return { runRate: null };
@@ -282,7 +285,6 @@
                 if (timeDiffDays > 0 && unitsConsumed > 0) { return { runRate: timeDiffDays / unitsConsumed }; }
                 return { runRate: null };
             }
-
             const firstConsumption = consumptions[0];
             const lastConsumption = consumptions[consumptions.length - 1];
             const totalUnitsConsumed = consumptions.reduce((sum, event) => sum + event.units, 0);
@@ -294,298 +296,286 @@
             return { runRate: null }; 
         }
 
-        function renderSummaryChart(items) {
-            const chartData = items
-                .filter(item => item.runRate && item.quantity > 0)
-                .map(item => ({
-                    name: item.name,
-                    remainingDays: item.quantity * item.runRate
-                }))
-                .sort((a, b) => a.remainingDays - b.remainingDays); 
-
-            if (summaryChart) {
-                summaryChart.destroy();
-            }
-
-            if (chartData.length === 0) {
-                ui.summaryChartContainer.classList.add('hidden');
-                return;
-            }
-            ui.summaryChartContainer.classList.remove('hidden');
-
-            const labels = chartData.map(d => d.name);
-            const data = chartData.map(d => d.remainingDays);
-            const colors = data.map(days => {
-                if (days <= 14) return 'rgba(239, 68, 68, 0.8)';
-                if (days <= 28) return 'rgba(245, 158, 11, 0.8)';
-                return 'rgba(34, 197, 94, 0.8)';
-            });
-
-            summaryChart = new Chart(ui.summaryChartCanvas, {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Days Remaining',
-                        data: data,
-                        backgroundColor: colors,
-                        borderColor: colors.map(c => c.replace('0.8', '1')),
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    indexAxis: 'y',
-                    maintainAspectRatio: false,
-                    responsive: true,
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    return `Est. ${context.raw.toFixed(1)} days remaining`;
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            beginAtZero: true,
-                            title: { display: true, text: 'Estimated Days Remaining' }
-                        }
-                    }
-                }
-            });
+        function renderFilteredInventory() {
+            const itemsToRender = (currentCategoryFilter === 'all')
+                ? allItems
+                : allItems.filter(item => item.category === currentCategoryFilter);
+            
+            itemsToRender.sort((a, b) => a.name.localeCompare(b.name));
+            renderInventory(itemsToRender);
         }
 
+        function renderCategoryFilters() {
+            ui.categoryFilters.innerHTML = '';
+            const allBtn = document.createElement('button');
+            allBtn.textContent = 'All';
+            allBtn.className = 'category-filter-btn px-3 py-1 text-sm rounded-full border border-slate-300 bg-white hover:bg-slate-100 transition-colors';
+            allBtn.dataset.category = 'all';
+            if (currentCategoryFilter === 'all') allBtn.classList.add('active');
+            ui.categoryFilters.appendChild(allBtn);
+
+            categories.forEach(cat => {
+                const btn = document.createElement('button');
+                btn.textContent = cat.name;
+                btn.className = 'category-filter-btn px-3 py-1 text-sm rounded-full border border-slate-300 bg-white hover:bg-slate-100 transition-colors';
+                btn.dataset.category = cat.name;
+                if (currentCategoryFilter === cat.name) btn.classList.add('active');
+                ui.categoryFilters.appendChild(btn);
+            });
+        }
+        
+        function renderCategoryDropdown(selectElement, options = { required: false, selected: '' }) {
+            selectElement.innerHTML = '';
+            if (!options.required) {
+                const noChangeOption = document.createElement('option');
+                noChangeOption.value = "";
+                noChangeOption.textContent = "No Change";
+                selectElement.appendChild(noChangeOption);
+            } else {
+                 const placeholderOption = document.createElement('option');
+                placeholderOption.value = "";
+                placeholderOption.textContent = "Select a category";
+                placeholderOption.disabled = true;
+                selectElement.appendChild(placeholderOption);
+            }
+
+            categories.forEach(cat => {
+                const option = document.createElement('option');
+                option.value = cat.name;
+                option.textContent = cat.name;
+                selectElement.appendChild(option);
+            });
+
+            const newOption = document.createElement('option');
+            newOption.value = "new_category";
+            newOption.textContent = "Create New Category...";
+            selectElement.appendChild(newOption);
+            
+            selectElement.value = options.selected || "";
+        }
+
+        function renderSummaryChart() {
+            // ... (rest of the function is unchanged, but uses allItems)
+            const chartData = allItems.filter(item => item.runRate && item.quantity > 0).map(item => ({ name: item.name, remainingDays: item.quantity * item.runRate })).sort((a, b) => a.remainingDays - b.remainingDays); 
+            if (summaryChart) { summaryChart.destroy(); }
+            if (chartData.length === 0) { ui.summaryChartContainer.classList.add('hidden'); return; }
+            ui.summaryChartContainer.classList.remove('hidden');
+            const labels = chartData.map(d => d.name);
+            const data = chartData.map(d => d.remainingDays);
+            const colors = data.map(days => { if (days <= 14) return 'rgba(239, 68, 68, 0.8)'; if (days <= 28) return 'rgba(245, 158, 11, 0.8)'; return 'rgba(34, 197, 94, 0.8)'; });
+            summaryChart = new Chart(ui.summaryChartCanvas, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Days Remaining', data: data, backgroundColor: colors, borderColor: colors.map(c => c.replace('0.8', '1')), borderWidth: 1 }] }, options: { indexAxis: 'y', maintainAspectRatio: false, responsive: true, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(context) { return `Est. ${context.raw.toFixed(1)} days remaining`; } } } }, scales: { x: { beginAtZero: true, title: { display: true, text: 'Estimated Days Remaining' } } } } });
+        }
 
         function renderInventory(items) {
+            // ... (function logic is mostly unchanged, just mobile optimization part)
             ui.loadingDiv.classList.add('hidden');
             ui.inventoryList.innerHTML = ''; 
-
             const twoWeeksFromNow = new Date();
             twoWeeksFromNow.setDate(new Date().getDate() + 14);
-            
             let lowStockCount = 0;
-
             if (items.length === 0) {
                 ui.emptyStateDiv.classList.remove('hidden');
+                ui.emptyStateDiv.querySelector('h3').textContent = (currentCategoryFilter === 'all') ? 'No items in inventory' : `No items in category: ${currentCategoryFilter}`;
             } else {
                 ui.emptyStateDiv.classList.add('hidden');
                 items.forEach(item => {
                     const el = document.createElement('div');
-                    
-                    let depletionDate = null;
-                    let depletionText = 'N/A';
-                    let isRunningLow = false;
-
-                    if (item.runRate && item.quantity > 0) {
-                        depletionDate = new Date();
-                        depletionDate.setDate(depletionDate.getDate() + (item.quantity * item.runRate));
-                        depletionText = depletionDate.toLocaleDateString();
-                        if (depletionDate <= twoWeeksFromNow) {
-                           isRunningLow = true;
-                           lowStockCount++;
-                        }
-                    } else if (item.runRate && item.quantity <= 0) {
-                        depletionText = 'Empty';
-                    }
-
+                    let depletionDate = null; let depletionText = 'N/A'; let isRunningLow = false;
+                    if (item.runRate && item.quantity > 0) { depletionDate = new Date(); depletionDate.setDate(depletionDate.getDate() + (item.quantity * item.runRate)); depletionText = depletionDate.toLocaleDateString(); if (depletionDate <= twoWeeksFromNow) { isRunningLow = true; lowStockCount++; } } else if (item.runRate && item.quantity <= 0) { depletionText = 'Empty'; }
                     el.className = `p-4 rounded-lg shadow-sm fade-in transition-colors ${isRunningLow ? 'bg-amber-50 border-2 border-amber-300' : 'bg-white'}`;
                     el.dataset.id = item.id;
-
                     el.innerHTML = `
-                        <div class="flex items-center justify-between">
-                             <p class="font-semibold text-lg flex items-center">
-                                ${item.name}
-                                ${isRunningLow ? '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 ml-2 text-amber-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-4a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1z" clip-rule="evenodd" /></svg>' : ''}
-                            </p>
-                            <button data-action="delete" class="text-red-500 hover:text-red-700 font-bold p-1 rounded-full flex items-center justify-center transition-colors">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg>
-                            </button>
+                        <div class="flex items-start justify-between">
+                            <div>
+                                <p class="font-semibold text-lg flex items-center">${item.name} ${isRunningLow ? '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 ml-2 text-amber-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-4a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1z" clip-rule="evenodd" /></svg>' : ''}</p>
+                                <p class="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full inline-block mt-1">${item.category || 'Uncategorized'}</p>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <button data-action="edit" class="text-slate-500 hover:text-blue-600 p-1 rounded-full flex items-center justify-center transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg></button>
+                                <button data-action="delete" class="text-slate-500 hover:text-red-600 p-1 rounded-full flex items-center justify-center transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg></button>
+                            </div>
                         </div>
                         <div class="grid grid-cols-2 gap-4 mt-3">
                             <div class="item-quantity-display bg-slate-50 p-2 rounded-md text-center cursor-pointer hover:bg-slate-100 flex flex-col justify-center">
                                 <p class="text-xs text-slate-500">Current Count</p>
                                 <p class="text-2xl font-bold text-slate-800 item-quantity-value">${Number(item.quantity).toLocaleString()}</p>
                             </div>
-                            <div class="grid grid-cols-3 gap-1.5 text-sm">
-                                <button data-action="increase-10" class="bg-blue-200 hover:bg-blue-300 text-blue-800 font-bold py-2 rounded-md">+10</button>
-                                <button data-action="increase-1" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 rounded-md">+1</button>
-                                <button data-action="increase-0.1" class="bg-blue-200 hover:bg-blue-300 text-blue-800 font-bold py-2 rounded-md">+0.1</button>
-                                <button data-action="decrease-10" class="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 rounded-md">-10</button>
-                                <button data-action="decrease-1" class="bg-slate-300 hover:bg-slate-400 text-slate-800 font-bold py-2 rounded-md">-1</button>
-                                <button data-action="decrease-0.1" class="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 rounded-md">-0.1</button>
+                            <div class="grid grid-cols-2 gap-2 text-sm">
+                                <button data-action="increase-1" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 rounded-md flex-grow">+1</button>
+                                <button data-action="increase-0.1" class="bg-blue-200 hover:bg-blue-300 text-blue-800 font-bold py-2 rounded-md flex-grow">+0.1</button>
+                                <button data-action="decrease-1" class="bg-slate-300 hover:bg-slate-400 text-slate-800 font-bold py-2 rounded-md flex-grow">-1</button>
+                                <button data-action="decrease-0.1" class="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 rounded-md flex-grow">-0.1</button>
                             </div>
                         </div>
                         <div class="mt-4 pt-3 border-t border-slate-100 grid grid-cols-3 gap-2 text-center text-xs">
-                             <div>
-                                <p class="text-slate-500">Est. Run Rate</p>
-                                <p class="font-medium">${item.runRate ? `${item.runRate.toFixed(1)} days/unit` : 'N/A'}</p>
-                            </div>
-                            <div>
-                                <p class="text-slate-500">Est. Empty On</p>
-                                <p class="font-medium">${depletionText}</p>
-                            </div>
-                            <div>
-                                <button data-action="history" data-name="${item.name}" data-quantity="${item.quantity}" class="text-blue-600 hover:underline w-full h-full">View History</button>
-                            </div>
+                             <div><p class="text-slate-500">Est. Run Rate</p><p class="font-medium">${item.runRate ? `${item.runRate.toFixed(1)} days/unit` : 'N/A'}</p></div>
+                            <div><p class="text-slate-500">Est. Empty On</p><p class="font-medium">${depletionText}</p></div>
+                            <div><button data-action="history" data-name="${item.name}" data-quantity="${item.quantity}" class="text-blue-600 hover:underline w-full h-full">View History</button></div>
                         </div>
                     `;
                     ui.inventoryList.appendChild(el);
                 });
             }
-
-            if (lowStockCount > 0) {
-                ui.alertBannerText.textContent = `${lowStockCount} item${lowStockCount > 1 ? 's are' : ' is'} estimated to run out within two weeks.`;
-                ui.alertBanner.classList.remove('hidden');
-            } else {
-                ui.alertBanner.classList.add('hidden');
-            }
+            if (lowStockCount > 0) { ui.alertBannerText.textContent = `${lowStockCount} item${lowStockCount > 1 ? 's are' : ' is'} estimated to run out within two weeks.`; ui.alertBanner.classList.remove('hidden'); } else { ui.alertBanner.classList.add('hidden'); }
         }
 
         function setupEventListeners() {
             ui.addItemForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const name = e.target.itemName.value.trim();
-                const quantity = parseFloat(e.target.itemQuantity.value);
-                const duration = e.target.itemDuration.value.trim();
+                let category = ui.itemCategorySelect.value;
+                const newCategoryName = ui.newCategoryNameInput.value.trim();
+
+                if (category === 'new_category') {
+                    if (newCategoryName) {
+                        await addDoc(categoriesCollection, { name: newCategoryName });
+                        category = newCategoryName; 
+                    } else {
+                        alert("Please enter a name for the new category.");
+                        return;
+                    }
+                }
+                
+                if (!category) {
+                    alert("Please select a category for the item.");
+                    return;
+                }
+
+                const name = ui.addItemForm.itemName.value.trim();
+                const quantity = parseFloat(ui.addItemForm.itemQuantity.value);
+                const duration = ui.addItemForm.itemDuration.value.trim() || null;
+                
                 if (name && !isNaN(quantity) && quantity >= 0) {
-                    const docRef = await addDoc(inventoryCollection, { name, quantity, duration: duration || null });
+                    const docRef = await addDoc(inventoryCollection, { name, quantity, duration, category });
                     await logChange(docRef.id, quantity, 0);
                     ui.addItemForm.reset();
+                    ui.newCategoryContainer.classList.add('hidden');
+                    ui.itemCategorySelect.classList.remove('hidden');
+                    renderCategoryDropdown(ui.itemCategorySelect, { required: true });
                 }
+            });
+
+            ui.itemCategorySelect.addEventListener('change', () => {
+                if (ui.itemCategorySelect.value === 'new_category') {
+                    ui.itemCategorySelect.classList.add('hidden');
+                    ui.newCategoryContainer.classList.remove('hidden');
+                    ui.newCategoryNameInput.focus();
+                }
+            });
+
+            ui.cancelNewCategoryBtn.addEventListener('click', () => {
+                ui.newCategoryContainer.classList.add('hidden');
+                ui.itemCategorySelect.classList.remove('hidden');
+                ui.newCategoryNameInput.value = '';
+                ui.itemCategorySelect.value = '';
             });
 
             ui.inventoryList.addEventListener('click', (e) => {
-                const target = e.target;
-                const button = target.closest('button');
-                const quantityDisplay = target.closest('.item-quantity-display');
-                const itemElement = target.closest('[data-id]');
+                const button = e.target.closest('button');
+                if (!button) return;
+                const itemElement = e.target.closest('[data-id]');
                 if (!itemElement) return;
                 const itemId = itemElement.dataset.id;
+                const action = button.dataset.action;
                 
-                if (button) {
-                    const action = button.dataset.action;
-                    if (action === 'increase-1') updateQuantity(itemId, 1);
-                    else if (action === 'decrease-1') updateQuantity(itemId, -1);
-                    else if (action === 'increase-10') updateQuantity(itemId, 10);
-                    else if (action === 'decrease-10') updateQuantity(itemId, -10);
-                    else if (action === 'increase-0.1') updateQuantity(itemId, 0.1);
-                    else if (action === 'decrease-0.1') updateQuantity(itemId, -0.1);
-                    else if (action === 'delete') deleteDoc(doc(db, inventoryCollection.path, itemId));
-                    else if (action === 'history') showHistoryModal(itemId, button.dataset.name, button.dataset.quantity);
-                } else if (quantityDisplay) {
-                    handleQuantityOverwrite(quantityDisplay, itemId);
+                const actions = {
+                    'increase-1': () => updateQuantity(itemId, 1),
+                    'decrease-1': () => updateQuantity(itemId, -1),
+                    'increase-0.1': () => updateQuantity(itemId, 0.1),
+                    'decrease-0.1': () => updateQuantity(itemId, -0.1),
+                    'delete': () => { if(confirm('Are you sure you want to delete this item?')) deleteDoc(doc(db, inventoryCollection.path, itemId)) },
+                    'edit': () => showEditModal(itemId),
+                    'history': () => showHistoryModal(itemId, button.dataset.name, button.dataset.quantity),
+                };
+
+                if (actions[action]) actions[action]();
+            });
+            
+            document.body.addEventListener('click', (e) => {
+                const button = e.target.closest('button');
+                if (button && button.dataset.action === 'close-modal') {
+                    button.closest('.modal-overlay').classList.add('hidden');
                 }
             });
 
-            ui.historyModal.closeBtn.addEventListener('click', () => ui.historyModal.el.classList.add('hidden'));
-            ui.historyModal.el.addEventListener('click', (e) => {
-                if (e.target === ui.historyModal.el) ui.historyModal.el.classList.add('hidden');
+            ui.categoryFilters.addEventListener('click', (e) => {
+                const button = e.target.closest('.category-filter-btn');
+                if (button) {
+                    currentCategoryFilter = button.dataset.category;
+                    document.querySelectorAll('.category-filter-btn').forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                    renderFilteredInventory();
+                }
             });
         }
         
-        function handleQuantityOverwrite(displayElement, itemId) {
-            const valueElement = displayElement.querySelector('.item-quantity-value');
-            const originalValue = valueElement.textContent.replace(/,/g, '');
-            
-            const input = document.createElement('input');
-            input.type = 'number';
-            input.step = "0.1";
-            input.className = 'no-spinner text-2xl font-bold text-slate-800 bg-transparent w-full text-center outline-none';
-            input.value = originalValue;
-            
-            displayElement.replaceChild(input, valueElement);
-            input.focus();
-            input.select();
-            
-            const saveOrRevert = () => {
-                const newValue = input.value;
-                input.removeEventListener('blur', saveOrRevert);
-                input.removeEventListener('keydown', handleKeydown);
+        function showEditModal(itemId) {
+            const item = allItems.find(i => i.id === itemId);
+            if (!item) return;
 
-                if (newValue !== originalValue) {
-                    setQuantity(itemId, newValue);
-                } else {
-                    displayElement.replaceChild(valueElement, input);
+            const form = ui.editItemModal.form;
+            form.innerHTML = `
+                <input type="hidden" name="itemId" value="${item.id}">
+                <div>
+                    <label for="editItemName" class="block text-sm font-medium text-slate-600">Item Name</label>
+                    <input type="text" id="editItemName" name="itemName" required value="${item.name}" class="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md">
+                </div>
+                <div>
+                    <label for="editItemCategory" class="block text-sm font-medium text-slate-600">Category</label>
+                    <select id="editItemCategory" name="itemCategory" class="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md"></select>
+                </div>
+                 <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="editItemQuantity" class="block text-sm font-medium text-slate-600">Quantity</label>
+                        <input type="number" id="editItemQuantity" name="itemQuantity" required step="0.1" value="${item.quantity}" class="no-spinner mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md">
+                    </div>
+                    <div>
+                        <label for="editItemDuration" class="block text-sm font-medium text-slate-600">Duration</label>
+                        <input type="number" id="editItemDuration" name="itemDuration" step="0.1" value="${item.duration || ''}" class="no-spinner mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md" placeholder="Optional">
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 pt-4">
+                    <button type="button" data-action="close-modal" class="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Save Changes</button>
+                </div>
+            `;
+            
+            renderCategoryDropdown(form.querySelector('#editItemCategory'), { selected: item.category });
+            ui.editItemModal.el.classList.remove('hidden');
+
+            form.onsubmit = async (e) => {
+                e.preventDefault();
+                const formData = new FormData(form);
+                const updates = {
+                    name: formData.get('itemName').trim(),
+                    category: formData.get('itemCategory'),
+                    quantity: parseFloat(formData.get('itemQuantity')),
+                    duration: formData.get('itemDuration') || null
+                };
+                
+                if (updates.name && !isNaN(updates.quantity)) {
+                    await updateDoc(doc(db, inventoryCollection.path, itemId), updates);
+                    ui.editItemModal.el.classList.add('hidden');
                 }
             };
-
-            const handleKeydown = (e) => {
-                if (e.key === 'Enter') {
-                    saveOrRevert();
-                } else if (e.key === 'Escape') {
-                    input.removeEventListener('blur', saveOrRevert);
-                    input.removeEventListener('keydown', handleKeydown);
-                    displayElement.replaceChild(valueElement, input);
-                }
-            };
-            
-            input.addEventListener('blur', saveOrRevert);
-            input.addEventListener('keydown', handleKeydown);
         }
 
         async function showHistoryModal(itemId, itemName, currentQuantity) {
+            // ... (rest of the function is unchanged)
             ui.historyModal.title.textContent = `History for ${itemName}`;
-            
-            if (historyChart) {
-                historyChart.destroy();
-                historyChart = null;
-            }
-            
+            if (historyChart) { historyChart.destroy(); historyChart = null; }
             const canvasContainer = ui.historyModal.body;
             canvasContainer.innerHTML = '';
-
             const historyCol = collection(db, inventoryCollection.path, itemId, 'history');
             const q = query(historyCol, orderBy('timestamp', 'desc'));
             const snapshot = await getDocs(q);
-            
-            if (snapshot.empty) {
-                canvasContainer.innerHTML = '<p class="text-center text-slate-500">No history recorded for this item yet.</p>';
-            } else {
+            if (snapshot.empty) { canvasContainer.innerHTML = '<p class="text-center text-slate-500">No history recorded yet.</p>'; } else {
                 const canvas = document.createElement('canvas');
-                canvas.id = 'historyChart';
                 canvasContainer.appendChild(canvas);
-
-                const labels = [];
-                const data = [];
-                let runningQuantity = parseFloat(currentQuantity);
-                labels.unshift('Now');
-                data.unshift(runningQuantity);
-
-                snapshot.docs.forEach(doc => {
-                    const log = doc.data();
-                    if (log.timestamp) {
-                        const date = log.timestamp.toDate();
-                        const prevQuantity = runningQuantity - log.change;
-                        labels.unshift(date.toLocaleDateString());
-                        data.unshift(prevQuantity);
-                        runningQuantity = prevQuantity;
-                    }
-                });
-
-                historyChart = new Chart(canvas, {
-                    type: 'line',
-                    data: {
-                        labels: labels,
-                        datasets: [{
-                            label: 'Stock Level',
-                            data: data,
-                            fill: true,
-                            borderColor: 'rgb(59, 130, 246)',
-                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                            tension: 0.1,
-                            stepped: true,
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        scales: { y: { beginAtZero: true } },
-                        plugins: { legend: { display: false } }
-                    }
-                });
+                const labels = []; const data = []; let runningQuantity = parseFloat(currentQuantity);
+                labels.unshift('Now'); data.unshift(runningQuantity);
+                snapshot.docs.forEach(doc => { const log = doc.data(); if (log.timestamp) { const date = log.timestamp.toDate(); const prevQuantity = runningQuantity - log.change; labels.unshift(date.toLocaleDateString()); data.unshift(prevQuantity); runningQuantity = prevQuantity; } });
+                historyChart = new Chart(canvas, { type: 'line', data: { labels: labels, datasets: [{ label: 'Stock Level', data: data, fill: true, borderColor: 'rgb(59, 130, 246)', backgroundColor: 'rgba(59, 130, 246, 0.1)', tension: 0.1, stepped: true, }] }, options: { responsive: true, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } } });
             }
-
             ui.historyModal.el.classList.remove('hidden');
         }
         
