@@ -6,6 +6,7 @@
     <title>StashTrack - Inventory Tracker</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20100%20100%22%3E%3Cpath%20d%3D%22M50%202%20C%2020%2010%2C%2010%2040%2C%2050%2098%20C%2090%2040%2C%2080%2010%2C%2050%202%20Z%22%20fill%3D%22%232d3748%22%2F%3E%3Cpolyline%20points%3D%2225%2C70%2045%2C50%2060%2C60%2075%2C45%22%20fill%3D%22none%22%20stroke%3D%22%23e53e3e%22%20stroke-width%3D%228%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3Cpath%20d%3D%22M75%2045%20L%2067%2050%20M%2075%2045%20L%2067%2040%22%20stroke%3D%22%23e53e3e%22%20stroke-width%3D%228%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3Cpath%20d%3D%22M50%208%20C%2041.16%2C8%2034%2C15.16%2034%2C24%20C%2034%2C35.48%2050%2C52%2050%2C52%20C%2050%2C52%2066%2C35.48%2066%2C24%20C%2066%2C15.16%2058.84%2C8%2050%2C8%20Z%22%20fill%3D%22%23e53e3e%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2224%22%20r%3D%226%22%20fill%3D%22white%22%2F%3E%3C%2Fsvg%3E">
     <style>
@@ -165,6 +166,9 @@
         };
         const appId = firebaseConfig.projectId;
         const initialAuthToken = null;
+
+        // Register the plugin globally for all charts
+        Chart.register(ChartDataLabels);
 
         let db, auth, userId, inventoryCollection, categoriesCollection;
         let allItems = [];
@@ -379,7 +383,17 @@
                 ? allItems
                 : allItems.filter(item => item.category === currentCategoryFilter);
 
-            const chartData = itemsToChart.filter(item => item.runRate && item.quantity > 0).map(item => ({ name: item.name, remainingDays: item.quantity * item.runRate })).sort((a, b) => a.remainingDays - b.remainingDays); 
+            const chartData = itemsToChart
+                .filter(item => item.runRate && item.quantity > 0)
+                .map(item => {
+                    const depletionDate = new Date();
+                    depletionDate.setDate(depletionDate.getDate() + (item.quantity * item.runRate));
+                    const now = new Date();
+                    const remainingMs = depletionDate.getTime() - now.getTime();
+                    const remainingDays = Math.max(0, remainingMs / (1000 * 60 * 60 * 24));
+                    return { name: item.name, remainingDays: remainingDays };
+                })
+                .sort((a, b) => a.remainingDays - b.remainingDays); 
             
             if (summaryChart) { summaryChart.destroy(); }
             if (chartData.length === 0) { ui.summaryChartContainer.classList.add('hidden'); return; }
@@ -389,7 +403,51 @@
             const data = chartData.map(d => d.remainingDays);
             const colors = data.map(days => { if (days <= 14) return 'rgba(239, 68, 68, 0.8)'; if (days <= 28) return 'rgba(245, 158, 11, 0.8)'; return 'rgba(34, 197, 94, 0.8)'; });
             
-            summaryChart = new Chart(ui.summaryChartCanvas, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Days Remaining', data: data, backgroundColor: colors, borderColor: colors.map(c => c.replace('0.8', '1')), borderWidth: 1 }] }, options: { indexAxis: 'y', maintainAspectRatio: false, responsive: true, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(context) { return `Est. ${context.raw.toFixed(1)} days remaining`; } } } }, scales: { x: { beginAtZero: true, title: { display: true, text: 'Estimated Days Remaining' } } } } });
+            summaryChart = new Chart(ui.summaryChartCanvas, { 
+                type: 'bar', 
+                data: { 
+                    labels: labels, 
+                    datasets: [{ 
+                        label: 'Days Remaining', 
+                        data: data, 
+                        backgroundColor: colors, 
+                        borderColor: colors.map(c => c.replace('0.8', '1')), 
+                        borderWidth: 1 
+                    }] 
+                }, 
+                options: { 
+                    indexAxis: 'y', 
+                    maintainAspectRatio: false, 
+                    responsive: true, 
+                    plugins: { 
+                        legend: { display: false }, 
+                        tooltip: { 
+                            callbacks: { 
+                                label: function(context) { return `Est. ${context.raw.toFixed(1)} days remaining`; } 
+                            } 
+                        },
+                        datalabels: {
+                            anchor: 'end',
+                            align: 'end',
+                            formatter: (value) => Math.round(value),
+                            color: '#334155',
+                            font: {
+                                weight: 'bold',
+                                size: 12,
+                            }
+                        }
+                    }, 
+                    scales: { 
+                        x: { 
+                            beginAtZero: true, 
+                            title: { 
+                                display: true, 
+                                text: 'Estimated Days Remaining' 
+                            } 
+                        } 
+                    } 
+                } 
+            });
         }
 
         function renderInventory(items) {
