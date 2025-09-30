@@ -238,16 +238,27 @@
             }
         };
         
-        const categoryColors = ['#e0f2fe', '#dcfce7', '#fef9c3', '#fee2e2', '#f5d0fe', '#ede9fe', '#dbeafe', '#cffafe', '#fce7f3', '#fae8ff'];
+        const categoryColors = ['#bae6fd', '#bbf7d0', '#fef08a', '#fecaca', '#e9d5ff', '#c7d2fe', '#a5f3fc', '#fbcfe8', '#fed7aa', '#99f6e4'];
 
         function getCategoryColor(categoryName) {
             if (!categoryName) return { bg: '#F1F5F9', text: '#475569' }; // Default slate color
-            let hash = 0;
-            for (let i = 0; i < categoryName.length; i++) {
-                hash = categoryName.charCodeAt(i) + ((hash << 5) - hash);
+            
+            const categoryIndex = categories.findIndex(c => c.name === categoryName);
+
+            // If category is not found or for some reason the array is not populated yet, fallback to a simple hash
+            if (categoryIndex === -1) {
+                let hash = 0;
+                for (let i = 0; i < categoryName.length; i++) {
+                    hash = categoryName.charCodeAt(i) + ((hash << 5) - hash);
+                }
+                hash = Math.abs(hash);
+                const colorIndex = hash % categoryColors.length;
+                const bgColor = categoryColors[colorIndex];
+                const textColor = '#1E293B';
+                return { bg: bgColor, text: textColor };
             }
-            hash = Math.abs(hash);
-            const colorIndex = hash % categoryColors.length;
+
+            const colorIndex = categoryIndex % categoryColors.length;
             const bgColor = categoryColors[colorIndex];
             const textColor = '#1E293B'; // Dark slate text for better contrast on light backgrounds
             return { bg: bgColor, text: textColor };
